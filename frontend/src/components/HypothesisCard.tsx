@@ -28,7 +28,22 @@ export function HypothesisCard({ hypothesis }: { hypothesis: Hypothesis }) {
         <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#111827', flex: 1, marginRight: '12px' }}>
           {hypothesis.title}
         </h3>
-        <StatusBadge status={hypothesis.status} />
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
+          {hypothesis.category && (
+            <span style={{
+              background: '#f3f4f6',
+              color: '#374151',
+              padding: '2px 8px',
+              borderRadius: '9999px',
+              fontSize: '11px',
+              fontWeight: 500,
+              textTransform: 'capitalize',
+            }}>
+              {hypothesis.category.replace('_', ' ').replace('bd gtm', 'BD/GTM')}
+            </span>
+          )}
+          <StatusBadge status={hypothesis.status} />
+        </div>
       </div>
       {hypothesis.description && (
         <p style={{ margin: '0 0 12px', color: '#6b7280', fontSize: '13px', lineHeight: '1.5' }}>
