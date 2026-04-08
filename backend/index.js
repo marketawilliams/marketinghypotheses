@@ -180,7 +180,7 @@ ANALYSIS: [brief note on what kind of test this suggests]`,
       const value = line.slice(colonIdx + 1).trim();
       acc[key] = value;
       return acc;
-    }, {} as Record<string, string>);
+    }, {});
 
     const title = lines['HYPOTHESIS_TITLE'] || raw_text.slice(0, 80);
     const description = [
