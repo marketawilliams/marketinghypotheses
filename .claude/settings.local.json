@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"/Users/marketaw/:claudecode/marketinghypotheses/frontend/src/types\")",
+      "Bash(mkdir -p \"/Users/marketaw/:claudecode/marketinghypotheses/frontend/src/api\")",
+      "Bash(mkdir -p \"/Users/marketaw/:claudecode/marketinghypotheses/frontend/src/components\")",
+      "Bash(mkdir -p \"/Users/marketaw/:claudecode/marketinghypotheses/frontend/src/pages\")"
+    ]
+  }
+}
