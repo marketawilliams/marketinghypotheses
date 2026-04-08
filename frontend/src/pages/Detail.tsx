@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { HypothesisDetail as HypothesisDetailType, Status } from '../types';
+import { HypothesisDetail as HypothesisDetailType, Status, Category } from '../types';
 import { getHypothesis, updateHypothesis } from '../api/hypotheses';
 import { StatusBadge } from '../components/StatusBadge';
 
@@ -32,10 +32,12 @@ export function Detail() {
   const [saved, setSaved] = useState(false);
 
   // Editable fields
+  const [title, setTitle] = useState('');
   const [status, setStatus] = useState<Status>('new');
   const [priority, setPriority] = useState(5);
   const [notes, setNotes] = useState('');
   const [description, setDescription] = useState('');
+  const [category, setCategory] = useState<Category | ''>('');
   const [updatedBy, setUpdatedBy] = useState('');
 
   useEffect(() => {
@@ -45,10 +47,12 @@ export function Detail() {
     getHypothesis(id)
       .then(data => {
         setHypothesis(data);
+        setTitle(data.title ?? '');
         setStatus(data.status);
         setPriority(data.priority ?? 5);
         setNotes(data.notes ?? '');
         setDescription(data.description ?? '');
+        setCategory(data.category ?? '');
       })
       .catch(() => setError('Failed to load hypothesis.'))
       .finally(() => setLoading(false));
@@ -61,10 +65,12 @@ export function Detail() {
     setSaved(false);
     try {
       const updated = await updateHypothesis(id, {
+        title,
         status,
         priority,
         notes,
         description,
+        category: category || undefined,
         updated_by: updatedBy || 'frontend-user',
       });
       setHypothesis(prev => prev ? { ...prev, ...updated } : null);
@@ -188,6 +194,29 @@ export function Detail() {
       }}>
         <h2 style={{ margin: '0 0 20px', fontSize: '16px', fontWeight: 600, color: '#111827' }}>Edit</h2>
 
+        {/* Title */}
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+            Title
+          </label>
+          <input
+            type="text"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              border: '1px solid #e5e7eb',
+              borderRadius: '6px',
+              fontSize: '14px',
+              outline: 'none',
+              fontFamily: 'inherit',
+              boxSizing: 'border-box',
+              color: '#111827',
+            }}
+          />
+        </div>
+
         {/* Description */}
         <div style={{ marginBottom: '20px' }}>
           <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
@@ -210,6 +239,24 @@ export function Detail() {
               color: '#111827',
             }}
           />
+        </div>
+
+        {/* Category */}
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+            Category
+          </label>
+          <select
+            value={category}
+            onChange={e => setCategory(e.target.value as Category | '')}
+            style={{ padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '14px', background: 'white', cursor: 'pointer', color: '#111827', outline: 'none' }}
+          >
+            <option value="">— Uncategorized —</option>
+            <option value="social">Social</option>
+            <option value="website">Website</option>
+            <option value="bd_gtm">BD / GTM</option>
+            <option value="other">Other</option>
+          </select>
         </div>
 
         {/* Status */}

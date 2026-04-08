@@ -1,4 +1,5 @@
 export type Status = 'new' | 'in_progress' | 'backburner' | 'complete' | 'archived';
+export type Category = 'social' | 'website' | 'bd_gtm' | 'other';
 
 export interface Hypothesis {
   id: string;
@@ -12,6 +13,7 @@ export interface Hypothesis {
   source: string;
   slack_thread_url: string;
   raw_transcript: string;
+  category: Category | null;
   created_at: string;
   updated_at: string;
 }

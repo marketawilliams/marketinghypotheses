@@ -127,35 +127,78 @@ app.get('/api/hypotheses/:id', async (req, res) => {
 
 // ---------------------------------------------------------------------------
 // POST /api/hypotheses
-// Manually create a hypothesis.
+// Manually create a hypothesis — runs through Claude for consistent structuring.
 // ---------------------------------------------------------------------------
 app.post('/api/hypotheses', async (req, res) => {
   try {
     const {
-      title,
-      description,
+      raw_text,
       original_proposer,
       priority,
       notes,
+      category,
       tagged_people,
-      source = 'manual',
     } = req.body;
 
-    if (!title) {
-      return res.status(400).json({ error: 'title is required' });
+    if (!raw_text) {
+      return res.status(400).json({ error: 'raw_text is required' });
     }
+
+    // Run through the same Claude prompt as Zapier for consistency.
+    const claudeResponse = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 1024,
+      messages: [{
+        role: 'user',
+        content: `You are analyzing a marketing hypothesis that someone has manually submitted for tracking.
+
+HYPOTHESIS TEXT:
+${raw_text}
+
+AUTHOR: ${original_proposer || 'unknown'}
+
+Your task:
+Structure this as a testable hypothesis. Even if it is roughly stated, interpret it charitably and extract the testable idea.
+
+Return ONLY the values in this EXACT format:
+
+IS_HYPOTHESIS: true or false
+HYPOTHESIS_TITLE: [short descriptive title, 5-10 words]
+BECAUSE: [context/belief/observation behind this idea]
+WE_BELIEVE: [the hypothesis made explicit]
+IF_TRUE_WE_EXPECT: [expected outcome if hypothesis is correct]
+AUTHOR: ${original_proposer || 'unknown'}
+ANALYSIS: [brief note on what kind of test this suggests]`,
+      }],
+    });
+
+    const rawText = claudeResponse.content[0]?.text || '';
+    const lines = rawText.split('\n').reduce((acc, line) => {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx === -1) return acc;
+      const key = line.slice(0, colonIdx).trim();
+      const value = line.slice(colonIdx + 1).trim();
+      acc[key] = value;
+      return acc;
+    }, {} as Record<string, string>);
+
+    const title = lines['HYPOTHESIS_TITLE'] || raw_text.slice(0, 80);
+    const description = [
+      lines['BECAUSE'] ? `**Because:** ${lines['BECAUSE']}` : null,
+      lines['WE_BELIEVE'] ? `**We believe:** ${lines['WE_BELIEVE']}` : null,
+      lines['IF_TRUE_WE_EXPECT'] ? `**If true we expect:** ${lines['IF_TRUE_WE_EXPECT']}` : null,
+    ].filter(Boolean).join('\n\n') || raw_text;
 
     const insertResult = await pool.query(
       `INSERT INTO hypotheses
-         (title, description, original_proposer, priority, notes, tagged_people, source)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (title, description, original_proposer, priority, notes, tagged_people, source, category, raw_transcript)
+       VALUES ($1, $2, $3, $4, $5, $6, 'manual', $7, $8)
        RETURNING *`,
-      [title, description, original_proposer, priority || 5, notes, tagged_people || [], source]
+      [title, description, original_proposer, priority || 5, notes, tagged_people || [], category || null, rawText]
     );
 
     const hypothesis = insertResult.rows[0];
 
-    // Log creation event.
     await pool.query(
       `INSERT INTO hypothesis_updates
          (hypothesis_id, updated_by, update_type, old_value, new_value)
@@ -172,12 +215,12 @@ app.post('/api/hypotheses', async (req, res) => {
 
 // ---------------------------------------------------------------------------
 // PATCH /api/hypotheses/:id
-// Update status, priority, notes. Log all changes.
+// Update status, priority, notes, title, category. Log all changes.
 // ---------------------------------------------------------------------------
 app.patch('/api/hypotheses/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, priority, notes, updated_by } = req.body;
+    const { status, priority, notes, title, category, description, updated_by } = req.body;
 
     const existingResult = await pool.query(
       'SELECT * FROM hypotheses WHERE id = $1',
@@ -192,42 +235,36 @@ app.patch('/api/hypotheses/:id', async (req, res) => {
     const updateLog = [];
 
     if (status !== undefined && status !== existing.status) {
-      updateLog.push({
-        update_type: 'status_change',
-        old_value: existing.status,
-        new_value: status,
-      });
+      updateLog.push({ update_type: 'status_change', old_value: existing.status, new_value: status });
     }
-
     if (priority !== undefined && priority !== existing.priority) {
-      updateLog.push({
-        update_type: 'priority_change',
-        old_value: String(existing.priority),
-        new_value: String(priority),
-      });
+      updateLog.push({ update_type: 'priority_change', old_value: String(existing.priority), new_value: String(priority) });
     }
-
     if (notes !== undefined && notes !== existing.notes) {
-      updateLog.push({
-        update_type: 'note_added',
-        old_value: existing.notes,
-        new_value: notes,
-      });
+      updateLog.push({ update_type: 'note_added', old_value: existing.notes, new_value: notes });
+    }
+    if (title !== undefined && title !== existing.title) {
+      updateLog.push({ update_type: 'title_change', old_value: existing.title, new_value: title });
+    }
+    if (category !== undefined && category !== existing.category) {
+      updateLog.push({ update_type: 'category_change', old_value: existing.category, new_value: category });
     }
 
     const updatedResult = await pool.query(
       `UPDATE hypotheses
        SET
-         status     = COALESCE($1, status),
-         priority   = COALESCE($2, priority),
-         notes      = COALESCE($3, notes),
-         updated_at = NOW()
-       WHERE id = $4
+         status      = COALESCE($1, status),
+         priority    = COALESCE($2, priority),
+         notes       = COALESCE($3, notes),
+         title       = COALESCE($4, title),
+         category    = COALESCE($5, category),
+         description = COALESCE($6, description),
+         updated_at  = NOW()
+       WHERE id = $7
        RETURNING *`,
-      [status, priority, notes, id]
+      [status, priority, notes, title, category, description, id]
     );
 
-    // Persist all change log entries.
     for (const entry of updateLog) {
       await pool.query(
         `INSERT INTO hypothesis_updates
@@ -545,6 +582,12 @@ A hypothesis is NOT testable if it's:
 - Administrative/logistical coordination
 - General questions seeking information (not proposing a test)
 
+Also classify the hypothesis into one of these categories based on the content:
+- social (social media, content, community)
+- website (web, landing pages, SEO, CRO)
+- bd_gtm (business development, go-to-market, partnerships, sales)
+- other (anything else)
+
 Return ONLY the values in this EXACT format:
 
 IS_HYPOTHESIS: true or false
@@ -552,6 +595,7 @@ HYPOTHESIS_TITLE: [if true: short descriptive title | if false: leave empty]
 BECAUSE: [if true: context/belief/observation | if false: leave empty]
 WE_BELIEVE: [if true: the hypothesis - make it explicit even if implied | if false: leave empty]
 IF_TRUE_WE_EXPECT: [if true: expected outcome | if false: leave empty]
+CATEGORY: [if true: social, website, bd_gtm, or other | if false: leave empty]
 AUTHOR: person's name
 SOURCE: Slack
 CHANNEL: channel name
@@ -593,12 +637,17 @@ ANALYSIS: [if true: "Testable hypothesis identified" | if false: "Rejected: [bri
       lines['IF_TRUE_WE_EXPECT'] ? `**If true we expect:** ${lines['IF_TRUE_WE_EXPECT']}` : null,
     ].filter(Boolean).join('\n\n');
 
+    // Validate category value.
+    const validCategories = ['social', 'website', 'bd_gtm', 'other'];
+    const rawCategory = (lines['CATEGORY'] || '').toLowerCase().trim();
+    const category = validCategories.includes(rawCategory) ? rawCategory : 'other';
+
     // Create the hypothesis card.
     const hypothesisResult = await pool.query(
       `INSERT INTO hypotheses
          (title, description, original_proposer, slack_thread_url, slack_channel_id,
-          slack_thread_ts, source, status, raw_transcript)
-       VALUES ($1, $2, $3, $4, $5, $6, 'emoji_trigger', 'new', $7)
+          slack_thread_ts, source, status, raw_transcript, category)
+       VALUES ($1, $2, $3, $4, $5, $6, 'emoji_trigger', 'new', $7, $8)
        RETURNING *`,
       [
         lines['HYPOTHESIS_TITLE'] || 'Untitled Hypothesis',
@@ -608,6 +657,7 @@ ANALYSIS: [if true: "Testable hypothesis identified" | if false: "Rejected: [bri
         channel_id || null,
         message_ts || null,
         rawText,
+        category,
       ]
     );
 

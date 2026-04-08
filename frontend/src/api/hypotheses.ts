@@ -25,11 +25,11 @@ export const updateHypothesis = async (id: string, data: Partial<Hypothesis> & {
   return res.json();
 };
 
-export const createHypothesis = async (data: Partial<Hypothesis>): Promise<Hypothesis> => {
+export const createHypothesis = async (data: Partial<Hypothesis> & { raw_text?: string }): Promise<Hypothesis> => {
   const res = await fetch(`${BASE}/api/hypotheses`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...data, source: 'manual' }),
+    body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error('Failed to create hypothesis');
   return res.json();
